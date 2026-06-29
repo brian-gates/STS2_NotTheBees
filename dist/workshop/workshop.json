@@ -1,0 +1,8 @@
+{
+  "title": "NOT THE BEES!",
+  "description": "A cosmetic meme mod. When the Entomancer elite shuffles Dazed cards into your deck, each one becomes Nic Cage screaming under a cage of bees (The Wicker Man, 2006), renamed 'NOT THE BEES!'. Only the Entomancer's Dazed are affected — Dazed from any other source stays normal. No gameplay changes.\n\nKnown issue: C# mods loaded via Steam Workshop currently hard-freeze Slay the Spire 2 on startup (a game-side sentry-godot bug, independent of mod code). Until that is fixed, install manually instead: https://github.com/brian-gates/STS2_NotTheBees",
+  "visibility": "private",
+  "changeNote": "Initial release.",
+  "tags": [],
+  "dependencies": []
+}

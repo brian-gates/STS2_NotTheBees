@@ -3,3 +3,11 @@ obj/
 *.user
 .DS_Store
 .superpowers/
+
+# Steam Workshop tooling/artifacts
+out/
+dist/workshop/content/
+tools/ModUploader
+tools/*.dylib
+tools/*.pdb
+tools/mod-uploader.log
