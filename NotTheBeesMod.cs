@@ -32,6 +32,9 @@ public static class NotTheBeesMod
     public static void Initialize()
     {
         if (_initialized) return;
+        // Set before patching so a throw partway through can never cause a re-entrant
+        // Initialize() to double-apply the Harmony patches.
+        _initialized = true;
         try
         {
             var harmony = new Harmony(HarmonyId);
@@ -61,8 +64,6 @@ public static class NotTheBeesMod
             {
                 GD.PrintErr("[NotTheBees] image not loaded; art swap disabled (rename still active)");
             }
-
-            _initialized = true;
         }
         catch (Exception ex)
         {
