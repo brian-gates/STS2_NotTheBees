@@ -1,0 +1,10 @@
+{
+  "id": "STS2_NotTheBees",
+  "name": "NOT THE BEES!",
+  "author": "brian",
+  "description": "Meme mod: the Dazed status card becomes Nic Cage screaming under a cage of bees (Wicker Man). Renames Dazed to 'NOT THE BEES!' and swaps its art. Cosmetic only.",
+  "version": "0.1.0",
+  "has_pck": false,
+  "has_dll": true,
+  "affects_gameplay": false
+}
