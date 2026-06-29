@@ -6,3 +6,7 @@ Task 3: complete (commit b7430ec, art swap, build ok)
 Task 4: complete (commit af93ba6, README)
 Whole-diff review: SPEC PASS, QUALITY Approved (2 cosmetic Minor, no fix). f2972a0..HEAD
 REMAINING GATE: human in-game visual verification (rename + art on a Dazed card)
+Task 5: complete (commit ba4e06b, scope to Entomancer Dazed, build ok)
+Task 5 review: SPEC PASS, QUALITY Approved (1 Important fixed in eab312b, 2 Minor no-action)
+Fix eab312b: _initialized set before patching (double-patch guard)
+Mod state: scoped to Entomancer-created Dazed. Installed. Awaiting human in-game verification.
