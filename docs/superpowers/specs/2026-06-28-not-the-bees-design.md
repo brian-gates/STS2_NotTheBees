@@ -26,9 +26,29 @@ balance, or mechanics change.
 
 ## Scope
 
-**In scope:** Daze status card only — rename + art swap.
+**In scope:** the Dazed status card — rename + art swap — **but only the instances created by
+the Entomancer** (the bee elite), not Dazed from any other source.
 **Out of scope:** bee boss name/intro, attack/move names, audio, any gameplay change. (User
 chose "Daze cards only".)
+
+### Why scoping is needed (decompile finding)
+
+There is exactly one shared `Dazed` card model; the card does not record who created it. Dazed is
+added by many sources: the **Entomancer** (via `PersonalHivePower`, whose move is literally
+`BEES_MOVE` and which calls `CreateCard<Dazed>()`), monsters Chomper/Noisebot/HauntedShip/
+EyeWithTeeth, relics Tea of Discourtesy and Blessed Antler, and the card Boost Away. A naive
+`is Dazed` gate would reflavor all of them. The user wants **only the Entomancer's**, so the mod
+must tag the specific instances the hive power creates and gate the rename/reface on that tag.
+
+### How the Entomancer's Dazed are distinguished
+
+`PersonalHivePower.AfterDamageReceived` creates each Dazed and adds it to combat via
+`CardPileCmd.AddGeneratedCardToCombat(CardModel card, …)`, called synchronously from the power's
+async state machine. A Harmony prefix on `AddGeneratedCardToCombat` runs with that state-machine
+frame on the stack, so it can confirm the hive power is the caller and tag the `card` instance in
+a `ConditionalWeakTable<CardModel, object>`. Each in-combat Dazed is a fresh clone of the canonical
+model (`CreateCard` clones), so per-instance tagging is exact and the canonical/library Dazed is
+never tagged (stays vanilla). The `Title`/`Portrait` patches then fire only for tagged instances.
 
 ## Behavior
 
@@ -39,8 +59,9 @@ When any **Daze** card is created/displayed (in hand, deck view, discard, card-s
 - Optionally, its description/flavor text may be reflavored if a clean hook exists (nice-to-have,
   not required).
 
-Every **other** card in the game is untouched — both patches gate on the Daze card's identity
-(id or concrete type) and pass through for anything else.
+Every **other** card is untouched — and so is **every Dazed that the Entomancer did not create**
+(e.g. a Dazed from Blessed Antler stays a normal Dazed). Both display patches gate on the
+hive-tag, not merely `is Dazed`, and pass through for anything else.
 
 ## Architecture
 
@@ -58,22 +79,29 @@ A single self-contained mod assembly, structured to mirror `STS2_DamageCharts`:
 ### Components
 
 1. **`NotTheBeesMod` (entry / lifecycle)**
-   - `Initialize()` — invoked by the loader. Creates a `Harmony` instance with a unique id
-     (`com.sts2notthebees`), loads the card texture once into a cached static `Texture2D`,
-     and `PatchAll()` / applies the two patches. Idempotent guard (`_initialized`) and a
-     try/catch kill-switch, copying the DamageCharts pattern.
+   - `Initialize()` — invoked by the loader. Creates a `Harmony` instance (`com.sts2notthebees`),
+     applies the tag + rename patches, loads the card texture once into a cached static
+     `Texture2D`, then applies the reface patch. Idempotent guard (`_initialized`) and a try/catch
+     kill-switch, copying the DamageCharts pattern.
    - **Texture loading:** at init, load `assets/not-the-bees.png` from the mod's own directory
      (`Assembly.GetExecutingAssembly().Location` → dir) via Godot
      `Image.LoadFromFile` → `ImageTexture.CreateFromImage`. Cache in a static field. If load
      fails, log and skip the reface patch (rename still works).
+   - **Hive tag set:** `static readonly ConditionalWeakTable<CardModel, object> _hiveDazed`.
 
-2. **Rename patch** — Harmony postfix on the Daze card's display-title resolver (a `LocString`
-   getter or name property on the Daze card type). Returns the meme string when the instance is
-   a Daze card; leaves the result unchanged otherwise.
+2. **Tag patch** — Harmony prefix on `CardPileCmd.AddGeneratedCardToCombat(CardModel card, …)`.
+   When `card is Dazed` and a `PersonalHivePower` frame is on the call stack
+   (`new StackTrace(false)`, match `DeclaringType.FullName.Contains("PersonalHivePower")` —
+   covers the async state-machine nested type), add `card` to `_hiveDazed`.
 
-3. **Reface patch** — Harmony patch on whatever supplies the Daze card's art `Texture2D`
-   (a property getter, or the card-view node's texture assignment). Returns/assigns the cached
-   meme texture for the Daze card; passes through otherwise.
+3. **Rename patch** — Harmony prefix on `CardModel.Title` getter (verified `public virtual string
+   Title`). When the instance is in `_hiveDazed`, set `__result = "NOT THE BEES!"` and skip the
+   original (`return false`); otherwise run the original (`return true`).
+
+4. **Reface patch** — Harmony prefix on `CardModel.Portrait` getter (verified
+   `public Texture2D Portrait => ResourceLoader.Load<Texture2D>(...)`, consumed by `NCard` at
+   `_portrait.Texture = Model.Portrait`). When the instance is in `_hiveDazed` and the texture
+   loaded, set `__result` to the cached texture and skip the original; otherwise run the original.
 
 ### Build & install
 
@@ -83,35 +111,39 @@ A single self-contained mod assembly, structured to mirror `STS2_DamageCharts`:
   game's `MacOS/mods/` folder (a post-build copy step or a small `install.sh`, matching how the
   other mods are deployed).
 
-## The key unknown (first implementation step)
+## Verified facts (decompiled `sts2.dll`, v0.107.1)
 
-The exact members for the Daze card's **title** and **art** in `sts2.dll` are not yet known.
-
-**Plan step 1 is a decompile spike:** open `sts2.dll` (ilspycmd / mono-disassembler) and locate:
-- the concrete Daze card class (or the id used to look it up), and
-- where its display name and its art texture are resolved.
-
-This pins both patch targets to real methods before any patch is written.
-
-### Risk: art may not be a C# property
-
-If card art is baked into a Godot scene/atlas and never flows through a patchable C# member,
-the reface hook moves to the **card-view node** layer — patch the node method that assigns the
-card's texture, swapping it when the bound card is a Daze. The decompile spike determines which
-layer before we commit to a patch shape. The rename is low-risk either way (text resolution is
-in C#). Worst case for art: ship rename-only and revisit.
+- Card: `sealed class Dazed : CardModel` (`MegaCrit.Sts2.Core.Models.Cards`).
+- `CardModel.Title` (`public virtual string`) — displayed name. `CardModel.Portrait`
+  (`public Texture2D`) — art; `NCard` does `_portrait.Texture = Model.Portrait`, and Dazed
+  (Status rarity) takes the visible-portrait branch.
+- Entomancer (`Models.Monsters.Entomancer`, move `BEES_MOVE`) applies `PersonalHivePower`;
+  `PersonalHivePower.AfterDamageReceived` does `CreateCard<Dazed>()` then
+  `CardPileCmd.AddGeneratedCardToCombat(card, PileType.Draw, …)` per stack.
+- `CardPileCmd.AddGeneratedCardToCombat(CardModel card, PileType, Player?, CardPilePosition)` —
+  static async; the `card` parameter is the freshly-created Dazed instance to tag.
 
 ## Testing / verification
 
-This is a Godot mod with no unit-test harness; verification is manual, in-game:
-1. Build, install into `mods/`, launch STS2.
-2. Confirm the mod loads (log line at init, no loader error).
-3. Reach a fight with the bee boss (or use the MCP mod / debug to obtain a Daze card) and
-   confirm: Daze cards show the meme art + renamed title; all other cards look normal.
-4. Confirm no crash on the card-select / deck-view screens where Daze is rendered.
+Godot mod, no unit-test harness — verification is manual, in-game, via the **dev console**
+(enabled here because the game is running modded: `NDevConsole` enables full commands when
+`ModManager.IsRunningModded()`). Commands have Tab-completion.
 
-The plan should include a fast path to obtain a Daze card for testing without grinding to the
-boss (e.g. via the existing `STS2_MCP` mod or a debug command), to keep the iteration loop short.
+1. Build, install into `mods/`, launch STS2; start a run.
+2. Confirm the mod loads (init log line, no loader error).
+3. **Positive test:** open the console, `fight ` + Tab to the Entomancer elite encounter, fight it,
+   and take a powered-attack hit while it has its hive power so it shuffles in Dazed. Those Dazed
+   must read **NOT THE BEES!** with the bee-cage art, in hand and in the draw/deck views.
+4. **Negative test (scoping):** `card DAZED` adds a Dazed *not* created by the hive power — it must
+   stay a **normal** Dazed (vanilla name + art). This proves the scoping works.
+5. Confirm no crash on card-select / deck-view screens.
+
+## Known limitations
+
+- A hive Dazed that survives a **save/reload mid-fight** is re-deserialized as a new instance and
+  loses its tag, reverting to vanilla. Acceptable (Dazed is Ethereal — usually gone same turn).
+- The hive power's hover-tip preview uses the canonical (untagged) Dazed, so it stays vanilla;
+  only the actual in-combat cards are reflavored.
 
 ## Non-goals / YAGNI
 
