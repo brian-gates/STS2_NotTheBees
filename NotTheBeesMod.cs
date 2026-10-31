@@ -23,6 +23,7 @@ public static class NotTheBeesMod
 
     private static bool _initialized;
     private static Texture2D? _beeTexture;
+    private static FieldInfo? _sentryInitField;
 
     // Tags the specific Dazed instances created by the Entomancer's hive power. Weak keys so cards
     // are collected normally; the canonical/library Dazed is never tagged (stays vanilla).
@@ -35,6 +36,7 @@ public static class NotTheBeesMod
         // Set before patching so a throw partway through can never cause a re-entrant
         // Initialize() to double-apply the Harmony patches.
         _initialized = true;
+        TryApplySentryShutdownWorkaround();
         try
         {
             var harmony = new Harmony(HarmonyId);
@@ -68,6 +70,50 @@ public static class NotTheBeesMod
         catch (Exception ex)
         {
             GD.PrintErr($"[NotTheBees] init failed: {ex.Message}");
+        }
+    }
+
+    // When any mod is loaded, SentryService.AfterGameInit calls SentryService.Shutdown(), which disposes
+    // the .NET SDK and then calls `shutdown` on the native sentry-godot node (SentryInit). The native
+    // shutdown leaves its per-frame observer registered; depending on startup timing it touches a freed
+    // object and the game hangs before the main menu. This reproduced with only this mod loaded.
+    // Null SentryService._sentryInit just before Shutdown runs: the game still disposes the .NET SDK and
+    // disables itself, but skips the native call. Same workaround as the Damage Charts mod; when both are
+    // loaded the second prefix finds the field already null and does nothing.
+    private static void TryApplySentryShutdownWorkaround()
+    {
+        try
+        {
+            var svc = AccessTools.TypeByName("MegaCrit.Sts2.Core.Debug.SentryService");
+            var shutdown = svc != null ? AccessTools.DeclaredMethod(svc, "Shutdown") : null;
+            _sentryInitField = svc != null ? AccessTools.Field(svc, "_sentryInit") : null;
+            if (shutdown == null || _sentryInitField == null || !_sentryInitField.IsStatic)
+            {
+                GD.Print("[NotTheBees] sentry shutdown workaround not applied (game changed?)");
+                return;
+            }
+            new Harmony(HarmonyId + ".sentry").Patch(shutdown, prefix: new HarmonyMethod(
+                typeof(NotTheBeesMod).GetMethod(nameof(SentryShutdownPrefix),
+                    BindingFlags.NonPublic | BindingFlags.Static)));
+            GD.Print("[NotTheBees] sentry shutdown workaround applied");
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[NotTheBees] sentry shutdown workaround skipped: {ex.Message}");
+        }
+    }
+
+    private static void SentryShutdownPrefix()
+    {
+        try
+        {
+            if (_sentryInitField?.GetValue(null) == null) return;
+            _sentryInitField.SetValue(null, null);
+            GD.Print("[NotTheBees] skipped native Sentry shutdown (modded-startup freeze workaround)");
+        }
+        catch
+        {
+            // never block the game's own shutdown path
         }
     }
 
