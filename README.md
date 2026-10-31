@@ -27,17 +27,25 @@ then reflavors only those:
 Every other card — and every Dazed the Entomancer did not create — passes through
 untouched.
 
+It also works around a game bug where loading any C# mod can hard-freeze the game on startup: the
+game's Sentry shutdown leaves a native observer running, so the mod nulls `SentryService._sentryInit`
+just before `Shutdown()` and the game skips that native call (the same workaround as the
+[Damage Charts](https://github.com/brian-gates/sts2-damage-charts) mod).
+
 ## Build
 
-Requires the .NET SDK and a local STS2 install.
+Requires the .NET 9 SDK and a local STS2 install. If `dotnet` can't find its runtime (common with a
+Homebrew install), set `DOTNET_ROOT` to the SDK's `libexec` directory first.
 
 ```bash
-export DOTNET_ROOT="/opt/homebrew/Cellar/dotnet/10.0.107/libexec"
 dotnet build -c Release \
-  -p:STS2GameDir="/Users/brian/Library/Application Support/Steam/steamapps/common/Slay the Spire 2"
+  -p:STS2GameDir="$HOME/Library/Application Support/Steam/steamapps/common/Slay the Spire 2"
 ```
 
 ## Install
+
+Subscribe on the [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3754108901),
+enable it in **Settings → Mods** and restart the game. Or install from source:
 
 ```bash
 ./install.sh
